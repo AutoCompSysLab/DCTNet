@@ -71,6 +71,7 @@ def evaluate():
     # Loading Validation/Testing Dataset
 
     # Data Loaders
+ 
     dataset_dict = {"3Dobject": crossView.KITTIObject,
                     "odometry": crossView.KITTIOdometry,
                     "argo": crossView.Argoverse,
@@ -112,6 +113,7 @@ def evaluate():
             torch.argmax(
                 outputs["transform_topview"].detach(),
                 1).cpu().numpy())
+
         true = np.squeeze(inputs[opt.type + "_gt"].detach().cpu().numpy())
         iou += mean_IU(pred, true)
         mAP += mean_precision(pred, true)

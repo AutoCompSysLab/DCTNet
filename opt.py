@@ -9,7 +9,7 @@ def get_args():
     parser.add_argument("--data_path", type=str, default="./data",
                         choices=[
                             './datasets/argoverse',
-                            './datasets/kitti/object/training',
+                            '/media/datasets/kitti/object/training',
                             './datasets/kitti/odometry',
                             './datasets/kitti/raw'],
                         help="Path to the root data directory")
@@ -71,7 +71,7 @@ def get_args():
                         help="Max number of training epochs")
     parser.add_argument("--log_frequency", type=int, default=5,
                         help="Log files every x epochs")
-    parser.add_argument("--num_workers", type=int, default=8,
+    parser.add_argument("--num_workers", type=int, default=4,
                         help="Number of cpu workers for dataloaders")
     parser.add_argument("--osm_path", type=str, default="./data/osm",
                         help="OSM path")
