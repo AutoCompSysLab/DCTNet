@@ -26,7 +26,7 @@ def _transpose_and_gather_feat(feat, ind):
     return feat
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2, logits=False, reduce=True):
+    def __init__(self, alpha=1.0, gamma=2, logits=False, reduce=True):
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
@@ -78,15 +78,15 @@ class compute_losses(nn.Module):
         losses["topview_loss"] = 0
         losses["transform_topview_loss"] = 0
         losses["transform_loss"] = 0
-        focal = True
+        focal = False
         if focal :
-            losses["topview_loss"] = self.compute_topview_focal_loss(
+            focal_weight = 10
+            losses["topview_loss"] = focal_weight*self.compute_topview_focal_loss(
                 outputs["topview"],
                 inputs[type])
-            losses["transform_topview_loss"] = self.compute_topview_focal_loss(
+            losses["transform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
                 outputs["transform_topview"],
                 inputs[type])
-            focal_weight = 4
         
         
         else:
@@ -98,13 +98,12 @@ class compute_losses(nn.Module):
                 outputs["transform_topview"],
                 inputs[type],
                 weight[type])
-            focal_weight = 1
             
         losses["transform_loss"] = self.compute_transform_losses(
             features,
             retransform_features)
-        losses["loss"] = focal_weight*losses["topview_loss"] + 0.001 * losses["transform_loss"] \
-                         + focal_weight *1 * losses["transform_topview_loss"]
+        losses["loss"] = losses["topview_loss"] + 0.001 * losses["transform_loss"] \
+                         + 1 * losses["transform_topview_loss"]
 
         #CrossEntropy includes softmax
         #import matplotlib.pyplot as plt
