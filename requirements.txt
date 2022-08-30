@@ -1,7 +1,11 @@
-opencv_python==4.1.1.26
-torch==1.0.0
+#for RTX3090Ti : pip install torch==1.7.1+cu110 torchvision==0.8.2+cu110 -f https://download.pytorch.org/whl/torch_stable.html
+#use pip to download libraries below.(without version)
+
+opencv_python==4.3.0.38
+#opencv_python==4.1.1.26
+#torch==1.0.0
 easydict==1.9
-torchvision==0.2.1
+#torchvision==0.2.1
 scipy==1.4.1
 numpy==1.18.5
 matplotlib==3.2.2
