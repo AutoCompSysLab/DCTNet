@@ -76,7 +76,7 @@ def test(args):
 
     CVP_path = os.path.join(args.model_path, "CycledViewProjection.pth")
     CVP_dict = torch.load(CVP_path, map_location=device)
-    models['CycledViewProjection'] = CycledViewProjection(in_dim= 3)#8)
+    models['CycledViewProjection'] = CycledViewProjection(in_dim= 8)
     filtered_dict_cvp = {
         k: v for k,
         v in CVP_dict.items() if k in models["CycledViewProjection"].state_dict()}

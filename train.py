@@ -80,9 +80,9 @@ class Trainer:
         self.models["CrossViewTransformer"] = crossView.CrossViewTransformer(128)
 
         self.models["decoder"] = crossView.Decoder(
-            512, self.opt.num_class)#self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class)
+            self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class)
         self.models["transform_decoder"] = crossView.Decoder(
-            512, self.opt.num_class)#self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
+            self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
 
         for key in self.models.keys():
             self.models[key].to(self.device)

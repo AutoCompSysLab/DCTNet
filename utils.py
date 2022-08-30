@@ -17,7 +17,6 @@ def _sigmoid(x):
 
 
 def mean_precision(eval_segm, gt_segm):
-    import pdb; pdb.set_trace()
     check_size(eval_segm, gt_segm)
     cl, n_cl = extract_classes(gt_segm)
     eval_mask, gt_mask = extract_both_masks(eval_segm, gt_segm, cl, n_cl)
