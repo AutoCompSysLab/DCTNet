@@ -8,7 +8,7 @@ from torch.nn.utils import spectral_norm
 
 from .ResnetEncoder import ResnetEncoder
 import matplotlib.pyplot as PLT
-
+from efficientnet_pytorch import EfficientNet
 # Utils
 
 
@@ -52,7 +52,6 @@ def upsample(x):
     """
     return F.interpolate(x, scale_factor=2, mode="nearest")
 
-
 class Encoder(nn.Module):
     """ Encodes the Image into low-dimensional feature representation
 
@@ -77,12 +76,17 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         self.resnet_encoder = ResnetEncoder(num_layers, pretrained)
-        num_ch_enc = self.resnet_encoder.num_ch_enc
+        #num_ch_enc = self.resnet_encoder.num_ch_enc
         # convolution to reduce depth and size of features before fc
-        self.conv1 = Conv3x3(num_ch_enc[-1], 128)
+        #self.conv1 = Conv3x3(num_ch_enc[-1], 128)
+        self.conv1 = Conv3x3(160, 128)
+        #self.conv2 = Conv3x3(128, 128)
         self.conv2 = Conv3x3(128, 128)
         self.pool = nn.MaxPool2d(2)
-
+        self.net = EfficientNet.from_pretrained('efficientnet-b4')
+        for m in self.net.parameters():
+            m.requires_grad = True
+        del self.net._fc
     def forward(self, x):
         """
 
@@ -91,7 +95,7 @@ class Encoder(nn.Module):
         x : torch.FloatTensor
             Batch of Image tensors
             | Shape: (batch_size, 3, img_height, img_width)
-
+ 
         Returns
         -------
         x : torch.FloatTensor
@@ -100,10 +104,12 @@ class Encoder(nn.Module):
         """
 
         batch_size, c, h, w = x.shape
-        x = self.resnet_encoder(x)[-1]
+        #x = self.resnet_encoder(x)[-1]
+        x =  self.net.extract_endpoints(x)
+        x = x['reduction_4'] #b0 reduction_5: [6,320,32,32] #b4 reduction_5: [6, 448, 32, 32] #b4 reduction_4: [6,160, 32,32]
         x = self.pool(self.conv1(x))
         x = self.conv2(x)
-        x = self.pool(x)
+        x = self.pool(x)#[6,128,8,8]
         return x
 
 

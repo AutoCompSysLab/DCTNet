@@ -24,6 +24,23 @@ def _transpose_and_gather_feat(feat, ind):
     feat = feat.view(feat.size(0), -1, feat.size(3))
     feat = _gather_feat(feat, ind)
     return feat
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, logits=False, reduce=True):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.logits = logits
+        self.reduce = reduce
+
+    def forward(self, inputs, targets):    
+        ce_loss = nn.CrossEntropyLoss(reduction='none')(inputs, targets)
+        pt = torch.exp(-ce_loss)
+        F_loss = self.alpha * (1-pt)**self.gamma * ce_loss
+
+        if self.reduce:
+            return torch.mean(F_loss)
+        else:
+            return F_loss
 
 
 class L1Loss(nn.Module):
@@ -62,14 +79,23 @@ class compute_losses(nn.Module):
         losses["transform_topview_loss"] = 0
         losses["transform_loss"] = 0
 
-        losses["topview_loss"] = self.compute_topview_loss(
+        # losses["topview_loss"] = self.compute_topview_loss(
+        #     outputs["topview"],
+        #     inputs[type],
+        #     weight[type])
+        # losses["transform_topview_loss"] = self.compute_topview_loss(
+        #     outputs["transform_topview"],
+        #     inputs[type],
+        #     weight[type])
+        focal_weight = 10
+        losses["topview_loss"] = focal_weight*self.compute_topview_focal_loss(
             outputs["topview"],
-            inputs[type],
-            weight[type])
-        losses["transform_topview_loss"] = self.compute_topview_loss(
+            inputs[type])
+        losses["transform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
             outputs["transform_topview"],
-            inputs[type],
-            weight[type])
+            inputs[type])
+    
+        
         losses["transform_loss"] = self.compute_transform_losses(
             features,
             retransform_features)
@@ -88,3 +114,10 @@ class compute_losses(nn.Module):
     def compute_transform_losses(self, outputs, retransform_output):
         loss = self.L1Loss(outputs, retransform_output)
         return loss
+
+    def compute_topview_focal_loss(self, outputs, true_top_view):
+        generated_top_view = outputs
+        true_top_view = torch.squeeze(true_top_view.long())
+        loss = FocalLoss()
+        output = loss(generated_top_view, true_top_view)
+        return output.mean()

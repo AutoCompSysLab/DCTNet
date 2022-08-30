@@ -9,7 +9,7 @@ def get_args():
     parser.add_argument("--data_path", type=str, default="./data",
                         choices=[
                             './datasets/argoverse',
-                            './datasets/kitti/object/training',
+                            '/home/curie/Workspace/data/kitti/object/training',
                             './datasets/kitti/odometry',
                             './datasets/kitti/raw'],
                         help="Path to the root data directory")
