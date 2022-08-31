@@ -47,7 +47,7 @@ class Trainer:
         self.models = {}
         self.weight = {"static": self.opt.static_weight, "dynamic": self.opt.dynamic_weight}
         self.seed = self.opt.global_seed
-        self.device = "cuda"
+        self.device = "cuda:"+ str(self.opt.device_num)
         self.criterion_d = nn.BCEWithLogitsLoss()
         self.parameters_to_train = []
         self.transform_parameters_to_train = []
@@ -203,7 +203,7 @@ class Trainer:
         features = self.models["CrossViewTransformer"](features, transform_feature, retransform_features)
 
         outputs["topview"] = self.models["decoder"](features)
-        outputs["transform_topview"] = self.models["transform_decoder"](transform_feature)
+        outputs["transform_topview"] = self.models["transform_decoder"](transform_feature) 
         if validation:
             return outputs
         losses = self.criterion(self.opt, self.weight, inputs, outputs, x_feature, retransform_features)

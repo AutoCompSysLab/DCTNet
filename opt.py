@@ -9,7 +9,7 @@ def get_args():
     parser.add_argument("--data_path", type=str, default="./data",
                         choices=[
                             './datasets/argoverse',
-                            '/home/curie/Workspace/data/kitti/object/training',
+                            '/home/curie/datasets/kitti/object/training',
                             './datasets/kitti/odometry',
                             './datasets/kitti/raw'],
                         help="Path to the root data directory")
@@ -77,7 +77,8 @@ def get_args():
                         help="OSM path")
     parser.add_argument('--log_root', type=str, default=os.getcwd() + '/log')
     parser.add_argument('--model_split_save', type=bool, default=True)
-
+    parser.add_argument("--device_num", type=int, default=0,
+                        help="gpu num")
     configs = edict(vars(parser.parse_args()))
 
     return configs
