@@ -15,13 +15,16 @@ class CycledViewProjection(nn.Module):
         self.retransform_module = TransformModule(dim=in_dim)
         # self.bn = nn.BatchNorm2d(512)
 
-    def forward(self, x):
+    def forward(self, x, label_features):
         B, C, H, W = x.view([-1, int(x.size()[1])] + list(x.size()[2:])).size()
         # x = self.bn(x)
         transform_feature = self.transform_module(x)
         transform_features = transform_feature.view([B, int(x.size()[1])] + list(x.size()[2:]))
         retransform_features = self.retransform_module(transform_features)
-        return transform_feature, retransform_features
+
+        label_transform_features = self.retransform_module(label_features)
+        label_retransform_features = self.transform_module(label_transform_features)
+        return transform_feature, retransform_features, label_transform_features, label_retransform_features
 
 
 class TransformModule(nn.Module):

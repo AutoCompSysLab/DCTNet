@@ -20,7 +20,7 @@ from torch import autograd
 from torch.optim.lr_scheduler import MultiStepLR
 # from torch.optim.lr_scheduler import CosineAnnealingLR
 from tensorboardX import SummaryWriter
-
+import torchvision.transforms.functional as F
 from PIL import Image
 import matplotlib.pyplot as PLT
 import matplotlib.cm as mpl_color_map
@@ -75,6 +75,7 @@ class Trainer:
 
         # Initializing models
         self.models["encoder"] = crossView.Encoder(18, self.opt.height, self.opt.width, True)
+        self.models["label_encoder"] = crossView.Encoder(18, self.opt.height, self.opt.width, pretrained= True)
 
         self.models['CycledViewProjection'] = crossView.CycledViewProjection(in_dim=8)
         self.models["CrossViewTransformer"] = crossView.CrossViewTransformer(128)
@@ -83,7 +84,8 @@ class Trainer:
             self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class)
         self.models["transform_decoder"] = crossView.Decoder(
             self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
-
+        self.models["label_retransform_decoder"] = crossView.Decoder(
+            self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
         for key in self.models.keys():
             self.models[key].to(self.device)
             if "discr" in key:
@@ -174,10 +176,8 @@ class Trainer:
         for self.epoch in range(self.start_epoch, self.opt.num_epochs + 1):
             self.adjust_learning_rate(self.model_optimizer, self.epoch, self.opt.lr_steps)
             loss = self.run_epoch()
-            output = ("Epoch: %d | lr:%.7f | Loss: %.4f | topview Loss: %.4f | transform_topview Loss: %.4f | "
-                      "transform Loss: %.4f"
-                      % (self.epoch, self.model_optimizer.param_groups[-1]['lr'], loss["loss"], loss["topview_loss"],
-                         loss["transform_topview_loss"], loss["transform_loss"]))
+            output = ("Epoch: %d | lr:%.7f | Loss: %.4f | topview Loss: %.4f | transform_topview Loss: %.4f | transform Loss: %.4f | label retransform topview Loss: %.4f"
+                      % (self.epoch, self.model_optimizer.param_groups[-1]['lr'], loss["loss"], loss["topview_loss"], loss["transform_topview_loss"], loss["transform_loss"], loss['label_retransform_topview_loss']))
             print(output)
             self.log.write(output + '\n')
             self.log.flush()
@@ -197,13 +197,23 @@ class Trainer:
 
         features = self.models["encoder"](inputs["color"])
 
+        if validation:
+            label = inputs[self.opt.type+"_gt"]
+        else:
+            label = inputs[self.opt.type]
+
+        label = torch.stack([label,label,label],dim=1)
+        label = F.resize(label, self.opt.height).float()
+        label_features = self.models["label_encoder"](label) #[6,128,8,8]
+
         # Cross-view Transformation Module
         x_feature = features
-        transform_feature, retransform_features = self.models["CycledViewProjection"](features)
+        transform_feature, retransform_features, label_transform_features, label_retransform_features = self.models["CycledViewProjection"](features, label_features)
         features = self.models["CrossViewTransformer"](features, transform_feature, retransform_features)
 
         outputs["topview"] = self.models["decoder"](features)
         outputs["transform_topview"] = self.models["transform_decoder"](transform_feature) 
+        outputs["label_retransform_topview"] = self.models["label_retransform_decoder"](label_retransform_features)
         if validation:
             return outputs
         losses = self.criterion(self.opt, self.weight, inputs, outputs, x_feature, retransform_features)
@@ -217,7 +227,8 @@ class Trainer:
             "topview_loss": 0.0,
             "transform_loss": 0.0,
             "transform_topview_loss": 0.0,
-            "loss_discr": 0.0
+            "label_retransform_topview_loss": 0.0,
+            #"loss_discr": 0.0
         }
         accumulation_steps = 8
         for batch_idx, inputs in tqdm.tqdm(enumerate(self.train_loader)):

@@ -24,23 +24,6 @@ def _transpose_and_gather_feat(feat, ind):
     feat = feat.view(feat.size(0), -1, feat.size(3))
     feat = _gather_feat(feat, ind)
     return feat
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=1, gamma=2, logits=False, reduce=True):
-        super(FocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.logits = logits
-        self.reduce = reduce
-
-    def forward(self, inputs, targets):    
-        ce_loss = nn.CrossEntropyLoss(reduction='none')(inputs, targets)
-        pt = torch.exp(-ce_loss)
-        F_loss = self.alpha * (1-pt)**self.gamma * ce_loss
-
-        if self.reduce:
-            return torch.mean(F_loss)
-        else:
-            return F_loss
 
 class FocalLoss(nn.Module):
     def __init__(self, alpha=1.0, gamma=2, logits=False, reduce=True):
@@ -105,6 +88,9 @@ class compute_losses(nn.Module):
             losses["transform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
                 outputs["transform_topview"],
                 inputs[type])
+            losses["label_retransform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
+                outputs["label_retransform_topview"],
+                inputs[type])
         
         else:
             losses["topview_loss"] = self.compute_topview_loss(
@@ -115,13 +101,16 @@ class compute_losses(nn.Module):
                 outputs["transform_topview"],
                 inputs[type],
                 weight[type])
+            losses["label_retransform_topview_loss"] = self.compute_topview_loss(
+                outputs["label_retransform_topview"],
+                inputs[type])
             
 
         losses["transform_loss"] = self.compute_transform_losses(
             features,
             retransform_features)
         losses["loss"] = losses["topview_loss"] + 0.001 * losses["transform_loss"] \
-                         + 1 * losses["transform_topview_loss"]
+                         + 1 * losses["transform_topview_loss"] + losses["label_retransform_topview_loss"] 
 
         #CrossEntropy includes softmax
         #import matplotlib.pyplot as plt
