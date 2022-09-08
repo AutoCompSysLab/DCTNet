@@ -74,6 +74,7 @@ class compute_losses(nn.Module):
 
     def forward(self, opt, weight, inputs, outputs, features, retransform_features):
         losses = {}
+        self.opt= opt
         type = opt.type
         losses["topview_loss"] = 0
         losses["transform_topview_loss"] = 0

@@ -17,7 +17,7 @@ from opt import get_eval_args as get_args
 from PIL import Image
 import matplotlib.pyplot as PLT
 import matplotlib.cm as mpl_color_map
-
+import torchvision.transforms.functional as F
 
 def readlines(filename):
     """Read all the lines in a text file and return as a list
@@ -57,12 +57,14 @@ def evaluate():
     models["encoder"] = crossView.Encoder(18, opt.height, opt.width, True)
     models['CycledViewProjection'] = crossView.CycledViewProjection(in_dim=8)
     models["CrossViewTransformer"] = crossView.CrossViewTransformer(128)
+    models["label_encoder"] = crossView.Encoder(18, opt.height, opt.width, pretrained= True)
 
     models["decoder"] = crossView.Decoder(
         models["encoder"].resnet_encoder.num_ch_enc, opt.num_class)
     models["transform_decoder"] = crossView.Decoder(
         models["encoder"].resnet_encoder.num_ch_enc, opt.num_class, "transform_decoder")
-
+    models["label_retransform_decoder"] = crossView.Decoder(
+            models["encoder"].resnet_encoder.num_ch_enc, opt.num_class, "transform_decoder")
     for key in models.keys():
         models[key].to("cuda")
 
@@ -136,14 +138,17 @@ def process_batch(opt, models, inputs):
             inputs[key] = input_.to("cuda")
 
     features = models["encoder"](inputs["color"])
-
+    label = inputs[opt.type+"_gt"]
+    label = torch.stack([label,label,label],dim=1)
+    label = F.resize(label, opt.height).float()
+    label_features = models["label_encoder"](label) #[6,128,8,8]
     # Cross-view Transformation Module
-    transform_feature, retransform_features = models["CycledViewProjection"](features)
+    transform_feature, retransform_features, label_transform_features, label_retransform_features = models["CycledViewProjection"](features,label_features)
     features = models["CrossViewTransformer"](features, transform_feature, retransform_features)
 
     outputs["topview"] = models["decoder"](features)
     outputs["transform_topview"] = models["transform_decoder"](transform_feature)
-
+    outputs["label_retransform_topview"] = models["label_retransform_decoder"](label_retransform_features)
     return outputs
 
 
