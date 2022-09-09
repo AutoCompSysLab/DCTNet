@@ -84,8 +84,8 @@ class Trainer:
             self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class)
         self.models["transform_decoder"] = crossView.Decoder(
             self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
-        self.models["label_retransform_decoder"] = crossView.Decoder(
-            self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
+        # self.models["label_retransform_decoder"] = crossView.Decoder(
+        #     self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
         for key in self.models.keys():
             self.models[key].to(self.device)
             if "discr" in key:
@@ -213,7 +213,8 @@ class Trainer:
 
         outputs["topview"] = self.models["decoder"](features)
         outputs["transform_topview"] = self.models["transform_decoder"](transform_feature) 
-        outputs["label_retransform_topview"] = self.models["label_retransform_decoder"](label_retransform_features)
+        #outputs["label_retransform_topview"] = self.models["label_retransform_decoder"](label_retransform_features)
+        outputs["label_retransform_topview"] = self.models["transform_decoder"](label_retransform_features)
         if validation:
             return outputs
         losses = self.criterion(self.opt, self.weight, inputs, outputs, x_feature, retransform_features)
