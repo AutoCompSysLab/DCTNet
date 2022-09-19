@@ -167,7 +167,7 @@ def evaluate():
     trans_iou /= len(test_loader)
     trans_mAP /= len(test_loader)
 
-    print("Evaluation Results: mIOU: %.4f, %.4f, %.4f mAP: %.4f, %.4f, %.4f" % (iou[0],iou[1],iou[2], mAP[0],mAP[1],mAP[2]))
+    print("Evaluation Results: mIOU: %.4f, mAP: %.4f, " % (iou[1], mAP[1]))
 
 
 def process_batch(opt, models, inputs):
