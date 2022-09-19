@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as PLT
 import numpy as np
 import cv2
-
+from torch.autograd import Variable
             
 def _gather_feat(feat, ind, mask=None):
     dim = feat.size(2)
@@ -72,7 +72,7 @@ class compute_losses(nn.Module):
         self.device = device
         self.L1Loss = nn.L1Loss()
 
-    def forward(self, opt, weight, inputs, outputs, features, retransform_features):
+    def forward(self, opt, weight, inputs, outputs, features, retransform_features, label_features, label_retransform_features):
         losses = {}
         self.opt= opt
         type = opt.type
@@ -80,45 +80,25 @@ class compute_losses(nn.Module):
         losses["transform_topview_loss"] = 0
         losses["transform_loss"] = 0
 
-        focal = True
-        if focal :
-            focal_weight = 10
-            losses["topview_loss"] = focal_weight*self.compute_topview_focal_loss(
-                outputs["topview"],
-                inputs[type])
-            losses["transform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
-                outputs["transform_topview"],
-                inputs[type])
-            losses["label_retransform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
-                outputs["label_retransform_topview"],
-                inputs[type])
-        
-        else:
-            losses["topview_loss"] = self.compute_topview_loss(
-                outputs["topview"],
-                inputs[type],
-                weight[type])
-            losses["transform_topview_loss"] = self.compute_topview_loss(
-                outputs["transform_topview"],
-                inputs[type],
-                weight[type])
-            losses["label_retransform_topview_loss"] = self.compute_topview_loss(
-                outputs["label_retransform_topview"],
-                inputs[type])
-            
 
+        focal_weight = 10
+        losses["topview_loss"] = focal_weight*self.compute_topview_focal_loss(
+            outputs["topview"],
+            inputs[type])
+        losses["transform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
+            outputs["transform_topview"],
+            inputs[type])
+            
         losses["transform_loss"] = self.compute_transform_losses(
             features,
             retransform_features)
+        losses["label_retransform_loss"] = self.compute_transform_losses(
+            label_features,
+            label_retransform_features)
         losses["loss"] = losses["topview_loss"] + 0.001 * losses["transform_loss"] \
-                         + 1 * losses["transform_topview_loss"] + losses["label_retransform_topview_loss"] 
+                         + 1 * losses["transform_topview_loss"] + 0.001 *losses["label_retransform_loss"] 
 
-        #CrossEntropy includes softmax
-        #import matplotlib.pyplot as plt
-        #plt.imshow(outputs["topview"][0,0,:,:].cpu().detach())
-        #plt.imshow(  inputs['dynamic'][0,:,:].cpu()  )
-        #plt.imshow(  inputs['color'][0,:,:].cpu().permute(2,1,0)  )
-        #plt.show()
+
         return losses
 
     def compute_topview_loss(self, outputs, true_top_view, weight):

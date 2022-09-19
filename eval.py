@@ -17,7 +17,39 @@ from opt import get_eval_args as get_args
 from PIL import Image
 import matplotlib.pyplot as PLT
 import matplotlib.cm as mpl_color_map
+
+from skimage import color
+from skimage.io._plugins.pil_plugin import ndarray_to_pil
 import torchvision.transforms.functional as F
+def gen_lut():
+  """
+  Generate a label colormap compatible with opencv lookup table, based on
+  Rick Szelski algorithm in `Computer Vision: Algorithms and Applications`,
+  appendix C2 `Pseudocolor Generation`.
+  :Returns:0
+    color_lut : opencv compatible color lookup table
+  """
+  tobits = lambda x, o: np.array(list(np.binary_repr(x, 24)[o::-3]), np.uint8)
+  arr = np.arange(256)
+  r = np.concatenate([np.packbits(tobits(x, -3)) for x in arr])
+  g = np.concatenate([np.packbits(tobits(x, -2)) for x in arr])
+  b = np.concatenate([np.packbits(tobits(x, -1)) for x in arr])
+  return np.concatenate([[[b]], [[g]], [[r]]]).T
+
+def labels2rgb(labels, lut):
+  """
+  Convert a label image to an rgb image using a lookup table
+  :Parameters:
+    labels : an image of type np.uint8 2D array
+    lut : a lookup table of shape (256, 3) and type np.uint8
+  :Returns:
+    colorized_labels : a colorized label image
+  """
+  lut[0] =np.array([[204,   102,   0]], dtype=np.uint8)
+  lut[1] =np.array([[235,   206,   135]], dtype=np.uint8)
+  lut[2] =np.array([[0,   0,   0]], dtype=np.uint8)
+ 
+  return cv2.LUT(cv2.merge((labels, labels, labels)), lut)
 
 def readlines(filename):
     """Read all the lines in a text file and return as a list
@@ -40,7 +72,7 @@ def load_model(models, model_path):
         print("Loading {} weights...".format(key))
         path = os.path.join(model_path, "{}.pth".format(key))
         model_dict = models[key].state_dict()
-        pretrained_dict = torch.load(path)
+        pretrained_dict = torch.load(path, map_location='cuda:0')
         pretrained_dict = {
             k: v for k,
                      v in pretrained_dict.items() if k in model_dict}
@@ -55,16 +87,15 @@ def evaluate():
     # Loading Pretarined Model
     models = {}
     models["encoder"] = crossView.Encoder(18, opt.height, opt.width, True)
+    models["label_encoder"] = crossView.Encoder(18, opt.height, opt.width, True)
     models['CycledViewProjection'] = crossView.CycledViewProjection(in_dim=8)
     models["CrossViewTransformer"] = crossView.CrossViewTransformer(128)
-    models["label_encoder"] = crossView.Encoder(18, opt.height, opt.width, pretrained= True)
-
+    
     models["decoder"] = crossView.Decoder(
         models["encoder"].resnet_encoder.num_ch_enc, opt.num_class)
     models["transform_decoder"] = crossView.Decoder(
         models["encoder"].resnet_encoder.num_ch_enc, opt.num_class, "transform_decoder")
-    models["label_retransform_decoder"] = crossView.Decoder(
-            models["encoder"].resnet_encoder.num_ch_enc, opt.num_class, "transform_decoder")
+
     for key in models.keys():
         models[key].to("cuda")
 
@@ -97,18 +128,27 @@ def evaluate():
 
     iou, mAP = np.array([0., 0.]), np.array([0., 0.])
     trans_iou, trans_mAP = np.array([0., 0.]), np.array([0., 0.])
+    if opt.type =="both":
+        iou, mAP = np.array([0., 0., 0.]), np.array([0., 0., 0.])
+        trans_iou, trans_mAP = np.array([0., 0., 0.]), np.array([0., 0., 0.])
     for batch_idx, inputs in tqdm.tqdm(enumerate(test_loader)):
         with torch.no_grad():
             outputs = process_batch(opt, models, inputs)
-        save_topview(
-            inputs["filename"],
-            outputs["topview"],
-            os.path.join(
-                opt.out_dir,
-                'topview',
-                "{}.png".format(inputs["filename"][0])))
-        pred = np.squeeze(
-            torch.argmax(
+        if opt.type == 'both':
+            save_topview_both(
+                inputs["filename"],
+                outputs["topview"],
+                os.path.join(opt.out_dir,opt.split,opt.type,"{}.png".format(inputs["filename"][0])))
+            pred = np.squeeze(
+                torch.argmax(
+                    outputs["topview"].detach(),
+                    1).cpu().numpy())
+        else:
+            save_topview(
+                inputs["filename"],
+                outputs["topview"],
+                os.path.join(opt.out_dir,opt.split,opt.type,"{}.png".format(inputs["filename"][0])))
+            pred = np.squeeze(torch.argmax(
                 outputs["topview"].detach(),
                 1).cpu().numpy())
         trans_pred = np.squeeze(
@@ -127,42 +167,64 @@ def evaluate():
     trans_iou /= len(test_loader)
     trans_mAP /= len(test_loader)
 
-    print("Evaluation Results: mIOU: %.4f mAP: %.4f" % (iou[1], mAP[1]))
+    print("Evaluation Results: mIOU: %.4f, %.4f, %.4f mAP: %.4f, %.4f, %.4f" % (iou[0],iou[1],iou[2], mAP[0],mAP[1],mAP[2]))
 
 
 def process_batch(opt, models, inputs):
     outputs = {}
     # print(inputs["filename"])
     for key, input_ in inputs.items():
+
         if key != "filename":
             inputs[key] = input_.to("cuda")
 
     features = models["encoder"](inputs["color"])
+
     label = inputs[opt.type+"_gt"]
+
     label = torch.stack([label,label,label],dim=1)
     label = F.resize(label, opt.height).float()
     label_features = models["label_encoder"](label) #[6,128,8,8]
+
     # Cross-view Transformation Module
-    transform_feature, retransform_features, label_transform_features, label_retransform_features = models["CycledViewProjection"](features,label_features)
+    x_feature = features
+    transform_feature, retransform_features, label_transform_features, label_retransform_features = models["CycledViewProjection"](features, label_features)
     features = models["CrossViewTransformer"](features, transform_feature, retransform_features)
 
     outputs["topview"] = models["decoder"](features)
-    outputs["transform_topview"] = models["transform_decoder"](transform_feature)
-    outputs["label_retransform_topview"] = models["label_retransform_decoder"](label_retransform_features)
+    outputs["transform_topview"] = models["transform_decoder"](transform_feature) 
     return outputs
 
 
 def save_topview(idx, tv, name_dest_im):
     tv_np = tv.squeeze().cpu().numpy()
     true_top_view = np.zeros((tv_np.shape[1], tv_np.shape[2]))
-    true_top_view[tv_np[1] > tv_np[0]] = 255
+    true_top_view[tv_np[1] > tv_np[0]] = 1.
     dir_name = os.path.dirname(name_dest_im)
     if not os.path.exists(dir_name):
         os.makedirs(dir_name)
-    cv2.imwrite(name_dest_im, true_top_view)
+    lut = gen_lut()
+    rgb = labels2rgb(true_top_view.astype(np.uint8), lut)
+    cv2.imwrite(name_dest_im, rgb)
+    # lut = gen_lut()
+    # rgb = labels2rgb(tv_np.astype(np.uint8), lut)
+    # nlabel= 2
+    # cv2.imwrite(name_dest_im, rgb)
+def save_topview_both(idx, tv, name_dest_im):
+    dir_name = os.path.dirname(name_dest_im)
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    tv_np = tv.squeeze().cpu().numpy()
+    tv_np = np.argmax(tv_np, axis=0)
+    # lut = gen_lut()
+    # rgb = labels2rgb(tv_np.astype(np.uint8), lut)
+    # # nlabel= 3
+    # # rgb_image = color.label2rgb(tv_np.astype(np.uint8), colors=np.random.random((nlabel, 3)))
+    # dir_name = os.path.dirname(name_dest_im)
+    # cv2.imwrite(name_dest_im, rgb)
 
-    # print("Saved prediction to {}".format(name_dest_im))
-
-
+    tv_np = ndarray_to_pil(tv_np.astype(np.bool_)).convert("1")
+    tv_np.save(name_dest_im)
+    
 if __name__ == "__main__":
     evaluate()

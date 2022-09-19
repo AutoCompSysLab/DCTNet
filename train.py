@@ -84,8 +84,7 @@ class Trainer:
             self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class)
         self.models["transform_decoder"] = crossView.Decoder(
             self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
-        # self.models["label_retransform_decoder"] = crossView.Decoder(
-        #     self.models["encoder"].resnet_encoder.num_ch_enc, self.opt.num_class, "transform_decoder")
+
         for key in self.models.keys():
             self.models[key].to(self.device)
             if "discr" in key:
@@ -176,8 +175,8 @@ class Trainer:
         for self.epoch in range(self.start_epoch, self.opt.num_epochs + 1):
             self.adjust_learning_rate(self.model_optimizer, self.epoch, self.opt.lr_steps)
             loss = self.run_epoch()
-            output = ("Epoch: %d | lr:%.7f | Loss: %.4f | topview Loss: %.4f | transform_topview Loss: %.4f | transform Loss: %.4f | label retransform topview Loss: %.4f"
-                      % (self.epoch, self.model_optimizer.param_groups[-1]['lr'], loss["loss"], loss["topview_loss"], loss["transform_topview_loss"], loss["transform_loss"], loss['label_retransform_topview_loss']))
+            output = ("Epoch: %d | lr:%.7f | Loss: %.4f | topview Loss: %.4f | transform_topview Loss: %.4f | transform Loss: %.4f | label retransform Loss: %.4f" 
+                      % (self.epoch, self.model_optimizer.param_groups[-1]['lr'], loss["loss"], loss["topview_loss"], loss["transform_topview_loss"], loss["transform_loss"], loss['label_retransform_loss']))
             print(output)
             self.log.write(output + '\n')
             self.log.flush()
@@ -213,11 +212,10 @@ class Trainer:
 
         outputs["topview"] = self.models["decoder"](features)
         outputs["transform_topview"] = self.models["transform_decoder"](transform_feature) 
-        #outputs["label_retransform_topview"] = self.models["label_retransform_decoder"](label_retransform_features)
-        outputs["label_retransform_topview"] = self.models["transform_decoder"](label_retransform_features)
+
         if validation:
             return outputs
-        losses = self.criterion(self.opt, self.weight, inputs, outputs, x_feature, retransform_features)
+        losses = self.criterion(self.opt, self.weight, inputs, outputs, x_feature, retransform_features, label_features, label_retransform_features)
 
         return outputs, losses
 
@@ -228,7 +226,7 @@ class Trainer:
             "topview_loss": 0.0,
             "transform_loss": 0.0,
             "transform_topview_loss": 0.0,
-            "label_retransform_topview_loss": 0.0,
+            "label_retransform_loss": 0.0
             #"loss_discr": 0.0
         }
         accumulation_steps = 8

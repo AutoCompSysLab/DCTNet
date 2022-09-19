@@ -8,10 +8,10 @@ def get_args():
     parser = argparse.ArgumentParser(description="Training options")
     parser.add_argument("--data_path", type=str, default="./data",
                         choices=[
-                            '/home/curie/datasets/argoverse/',
-                            '/home/curie/datasets/kitti/object/training',
-                            '/home/curie/datasets/kitti/odometry/dataset/sequences',
-                            '/home/curie/datasets/kitti/raw'],
+                            '/home/curie/Workspace/data/argoverse/',
+                            '/home/curie/Workspace/data/kitti/object/training',
+                            '/home/curie/Workspace/data/kitti/odometry/dataset/sequences',
+                            '/home/curie/Workspace/data/kitti/raw'],
                         help="Path to the root data directory")
     parser.add_argument("--save_path", type=str, default="./models/",
                         help="Path to save models")
