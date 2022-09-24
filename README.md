@@ -42,7 +42,7 @@ DCTNet/
 Our code was tested in virtual environment with Python 3.7, Pytorch 1.7.1, torchvision 0.8.2 and installing all the dependencies listed in the requirements file.
 
 ```plain
-git clone https://github.com/curie3170/DCTNet.git
+git clone https://github.com/AutoCompSysLab/DCTNet
 
 cd DCTNet
 pip install -r requirements.txt

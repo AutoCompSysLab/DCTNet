@@ -80,15 +80,12 @@ class compute_losses(nn.Module):
         losses["transform_topview_loss"] = 0
         losses["transform_loss"] = 0
 
-        if  opt.type == "both":
-            topview_weight = 10
-        else:
-            topview_weight = 1
+        focal_weight = 10
         
-        losses["topview_loss"] = topview_weight*self.compute_topview_focal_loss(
+        losses["topview_loss"] = focal_weight*self.compute_topview_focal_loss(
             outputs["topview"],
             inputs[type])
-        losses["transform_topview_loss"] = topview_weight*self.compute_topview_focal_loss(
+        losses["transform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
             outputs["transform_topview"],
             inputs[type])
             
