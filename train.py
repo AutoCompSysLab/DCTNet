@@ -20,7 +20,8 @@ from torch import autograd
 from torch.optim.lr_scheduler import MultiStepLR
 # from torch.optim.lr_scheduler import CosineAnnealingLR
 from tensorboardX import SummaryWriter
-import torchvision.transforms.functional as F
+import torch.nn.functional as F
+import torchvision.transforms.functional as TF
 from PIL import Image
 import matplotlib.pyplot as PLT
 import matplotlib.cm as mpl_color_map
@@ -31,7 +32,7 @@ import tqdm
 
 from losses import compute_losses
 from utils import mean_IU, mean_precision
-
+from utils import both_mean_IU, both_mean_precision
 
 def readlines(filename):
     """Read all the lines in a text file and return as a list
@@ -45,16 +46,15 @@ class Trainer:
     def __init__(self):
         self.opt = get_args()
         self.models = {}
-        self.weight = {"static": self.opt.static_weight, "dynamic": self.opt.dynamic_weight}
+        self.weight = {"static": self.opt.static_weight, "dynamic": self.opt.dynamic_weight, "both": self.opt.both_weight}
         self.seed = self.opt.global_seed
-        self.device = "cuda:"+ str(self.opt.device_num)
+        self.device = "cuda"
         self.criterion_d = nn.BCEWithLogitsLoss()
         self.parameters_to_train = []
         self.transform_parameters_to_train = []
         self.detection_parameters_to_train = []
         self.base_parameters_to_train = []
         self.parameters_to_train = []
-        self.parameters_to_train_D = []
         self.criterion = compute_losses()
         self.create_time = time.strftime("%Y-%m-%d-%H-%M", time.localtime())
         self.epoch = 0
@@ -77,7 +77,7 @@ class Trainer:
         self.models["encoder"] = crossView.Encoder(18, self.opt.height, self.opt.width, True)
         self.models["label_encoder"] = crossView.Encoder(18, self.opt.height, self.opt.width, pretrained= True)
 
-        self.models['CycledViewProjection'] = crossView.CycledViewProjection(in_dim=8)
+        self.models["CycledViewProjection"] = crossView.CycledViewProjection(in_dim=8)
         self.models["CrossViewTransformer"] = crossView.CrossViewTransformer(128)
 
         self.models["decoder"] = crossView.Decoder(
@@ -87,10 +87,7 @@ class Trainer:
 
         for key in self.models.keys():
             self.models[key].to(self.device)
-            if "discr" in key:
-                self.parameters_to_train_D += list(
-                    self.models[key].parameters())
-            elif "transform" in key:
+            if "transform" in key:
                 self.transform_parameters_to_train += list(self.models[key].parameters())
             else:
                 self.base_parameters_to_train += list(self.models[key].parameters())
@@ -193,18 +190,22 @@ class Trainer:
         for key, input in inputs.items():
             if key != "filename":
                 inputs[key] = input.to(self.device)
-
+        
         features = self.models["encoder"](inputs["color"])
 
         if validation:
             label = inputs[self.opt.type+"_gt"]
         else:
             label = inputs[self.opt.type]
-
-        label = torch.stack([label,label,label],dim=1)
-        label = F.resize(label, self.opt.height).float()
+        if self.opt.type == "both":
+            #one_hot
+            label = F.one_hot(label, num_classes=3).permute(0,3,1,2)
+            label = TF.resize(label, self.opt.height).float()
+        else:
+            label = torch.stack([label,label,label],dim=1)
+            label = TF.resize(label, self.opt.height).float()
+        
         label_features = self.models["label_encoder"](label) #[6,128,8,8]
-
         # Cross-view Transformation Module
         x_feature = features
         transform_feature, retransform_features, label_transform_features, label_retransform_features = self.models["CycledViewProjection"](features, label_features)
@@ -227,7 +228,6 @@ class Trainer:
             "transform_loss": 0.0,
             "transform_topview_loss": 0.0,
             "label_retransform_loss": 0.0
-            #"loss_discr": 0.0
         }
         accumulation_steps = 8
         for batch_idx, inputs in tqdm.tqdm(enumerate(self.train_loader)):
@@ -248,8 +248,11 @@ class Trainer:
         return loss
 
     def validation(self, log):
-        iou, mAP = np.array([0., 0.]), np.array([0., 0.])
-        trans_iou, trans_mAP = np.array([0., 0.]), np.array([0., 0.])
+        if self.opt.type == "both":
+            iou, mAP = np.array([0., 0., 0.]), np.array([0., 0., 0.])
+        else: 
+            iou, mAP = np.array([0., 0.]), np.array([0., 0.])
+
         for batch_idx, inputs in tqdm.tqdm(enumerate(self.val_loader)):
             with torch.no_grad():
                 outputs = self.process_batch(inputs, True)
@@ -259,11 +262,18 @@ class Trainer:
                     1).cpu().numpy())
             true = np.squeeze(
                 inputs[self.opt.type + "_gt"].detach().cpu().numpy())
-            iou += mean_IU(pred, true)
-            mAP += mean_precision(pred, true)
+            if self.opt.type == "both":
+                iou += both_mean_IU(pred, true)
+                mAP += both_mean_precision(pred, true)
+            else:
+                iou += mean_IU(pred, true)
+                mAP += mean_precision(pred, true)
         iou /= len(self.val_loader)
         mAP /= len(self.val_loader)
-        output = ("Epoch: %d | Validation: mIOU: %.4f mAP: %.4f" % (self.epoch, iou[1], mAP[1]))
+        if self.opt.type == "both":
+            output = ("Epoch: %d | Validation: mIOU: %.4f, %.4f, %.4f mAP: %.4f, %.4f, %.4f" % (self.epoch, iou[0],iou[1],iou[2], mAP[0],mAP[1],mAP[2]))
+        else:
+            output = ("Epoch: %d | Validation: mIOU: %.4f mAP: %.4f" % (self.epoch, iou[1], mAP[1]))
         print(output)
         log.write(output + '\n')
         log.flush()
@@ -304,18 +314,17 @@ class Trainer:
                 self.opt.load_weights_folder))
 
         for key in self.models.keys():
-            if "discriminator" not in key:
-                print("Loading {} weights...".format(key))
-                path = os.path.join(
-                    self.opt.load_weights_folder,
-                    "{}.pth".format(key))
-                model_dict = self.models[key].state_dict()
-                pretrained_dict = torch.load(path)
-                if 'epoch' in pretrained_dict:
-                    self.start_epoch = pretrained_dict['epoch']
-                pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-                model_dict.update(pretrained_dict)
-                self.models[key].load_state_dict(model_dict)
+            print("Loading {} weights...".format(key))
+            path = os.path.join(
+                self.opt.load_weights_folder,
+                "{}.pth".format(key))
+            model_dict = self.models[key].state_dict()
+            pretrained_dict = torch.load(path)
+            if 'epoch' in pretrained_dict:
+                self.start_epoch = pretrained_dict['epoch']
+            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+            model_dict.update(pretrained_dict)
+            self.models[key].load_state_dict(model_dict)
 
         # loading adam state
         if self.opt.load_weights_folder == "":
@@ -339,10 +348,6 @@ class Trainer:
         optimizer.param_groups[1]['lr'] = lr
         optimizer.param_groups[0]['weight_decay'] = decay
         optimizer.param_groups[1]['weight_decay'] = decay
-        # for param_group in optimizer.param_groups:
-        #     param_group['lr'] = lr
-        #     param_group['lr'] = lr_transform
-        # param_group['weight_decay'] = decay
 
     def set_seed(self):
         seed = self.seed

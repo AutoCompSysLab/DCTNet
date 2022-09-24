@@ -80,12 +80,15 @@ class compute_losses(nn.Module):
         losses["transform_topview_loss"] = 0
         losses["transform_loss"] = 0
 
-
-        focal_weight = 10
-        losses["topview_loss"] = focal_weight*self.compute_topview_focal_loss(
+        if  opt.type == "both":
+            topview_weight = 10
+        else:
+            topview_weight = 1
+        
+        losses["topview_loss"] = topview_weight*self.compute_topview_focal_loss(
             outputs["topview"],
             inputs[type])
-        losses["transform_topview_loss"] = focal_weight*self.compute_topview_focal_loss(
+        losses["transform_topview_loss"] = topview_weight*self.compute_topview_focal_loss(
             outputs["transform_topview"],
             inputs[type])
             
@@ -96,17 +99,9 @@ class compute_losses(nn.Module):
             label_features,
             label_retransform_features)
         losses["loss"] = losses["topview_loss"] + 0.001 * losses["transform_loss"] \
-                         + 1 * losses["transform_topview_loss"] + 0.001 *losses["label_retransform_loss"] 
-
+                         + losses["transform_topview_loss"] + 0.001 *losses["label_retransform_loss"] 
 
         return losses
-
-    def compute_topview_loss(self, outputs, true_top_view, weight):
-        generated_top_view = outputs
-        true_top_view = torch.squeeze(true_top_view.long())
-        loss = nn.CrossEntropyLoss(weight=torch.Tensor([1., weight]).cuda())
-        output = loss(generated_top_view, true_top_view)
-        return output.mean()
 
     def compute_transform_losses(self, outputs, retransform_output):
         loss = self.L1Loss(outputs, retransform_output)

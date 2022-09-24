@@ -12,6 +12,7 @@ import cv2
 import tqdm
 
 from utils import mean_IU, mean_precision
+from utils import both_mean_IU, both_mean_precision
 from opt import get_eval_args as get_args
 
 from PIL import Image
@@ -36,7 +37,7 @@ def gen_lut():
   b = np.concatenate([np.packbits(tobits(x, -1)) for x in arr])
   return np.concatenate([[[b]], [[g]], [[r]]]).T
 
-def labels2rgb(labels, lut):
+def labels2rgb(labels, lut, type):
   """
   Convert a label image to an rgb image using a lookup table
   :Parameters:
@@ -45,11 +46,19 @@ def labels2rgb(labels, lut):
   :Returns:
     colorized_labels : a colorized label image
   """
-  lut[0] =np.array([[204,   102,   0]], dtype=np.uint8)
-  lut[1] =np.array([[235,   206,   135]], dtype=np.uint8)
-  lut[2] =np.array([[0,   0,   0]], dtype=np.uint8)
+  if type == "both":
+    lut[0] =np.array([[204,   102,   0]], dtype=np.uint8)
+    lut[1] =np.array([[235,   206,   135]], dtype=np.uint8)
+    lut[2] =np.array([[0,   0,   0]], dtype=np.uint8)
+  elif type == "dynamic":
+    lut[0] =np.array([[0,   0,   0]], dtype=np.uint8)
+    lut[1] =np.array([[204,   102,   0]], dtype=np.uint8)
+  else:
+    lut[0] =np.array([[0,   0,   0]], dtype=np.uint8)
+    lut[1] =np.array([[235,   206,   135]], dtype=np.uint8)
  
   return cv2.LUT(cv2.merge((labels, labels, labels)), lut)
+
 
 def readlines(filename):
     """Read all the lines in a text file and return as a list
@@ -127,47 +136,31 @@ def evaluate():
         drop_last=True)
 
     iou, mAP = np.array([0., 0.]), np.array([0., 0.])
-    trans_iou, trans_mAP = np.array([0., 0.]), np.array([0., 0.])
     if opt.type =="both":
         iou, mAP = np.array([0., 0., 0.]), np.array([0., 0., 0.])
-        trans_iou, trans_mAP = np.array([0., 0., 0.]), np.array([0., 0., 0.])
     for batch_idx, inputs in tqdm.tqdm(enumerate(test_loader)):
         with torch.no_grad():
             outputs = process_batch(opt, models, inputs)
-        if opt.type == 'both':
-            save_topview_both(
-                inputs["filename"],
+        save_topview(
                 outputs["topview"],
-                os.path.join(opt.out_dir,opt.split,opt.type,"{}.png".format(inputs["filename"][0])))
-            pred = np.squeeze(
-                torch.argmax(
-                    outputs["topview"].detach(),
-                    1).cpu().numpy())
-        else:
-            save_topview(
-                inputs["filename"],
-                outputs["topview"],
-                os.path.join(opt.out_dir,opt.split,opt.type,"{}.png".format(inputs["filename"][0])))
-            pred = np.squeeze(torch.argmax(
+                os.path.join(opt.out_dir,opt.split,opt.type,"{}.png".format(inputs["filename"][0])),opt.type)
+        pred = np.squeeze(torch.argmax(
                 outputs["topview"].detach(),
-                1).cpu().numpy())
-        trans_pred = np.squeeze(
-            torch.argmax(
-                outputs["transform_topview"].detach(),
                 1).cpu().numpy())
 
         true = np.squeeze(inputs[opt.type + "_gt"].detach().cpu().numpy())
-        iou += mean_IU(pred, true)
-        mAP += mean_precision(pred, true)
-        trans_iou += mean_IU(trans_pred, true)
-        trans_mAP += mean_precision(trans_pred, true)
+        if opt.type =="both":
+            iou += both_mean_IU(pred, true)
+            mAP += both_mean_precision(pred, true)
+        else:
+            iou += mean_IU(pred, true)
+            mAP += mean_precision(pred, true)
     iou /= len(test_loader)
     mAP /= len(test_loader)
-
-    trans_iou /= len(test_loader)
-    trans_mAP /= len(test_loader)
-
-    print("Evaluation Results: mIOU: %.4f, mAP: %.4f, " % (iou[1], mAP[1]))
+    if opt.type =="both":
+        print("Evaluation Results: mIOU: %.4f, %.4f, %.4f, mAP: %.4f, %.4f, %.4f" % (iou[0], iou[1], iou[2], mAP[0], mAP[1], mAP[2]))
+    else:
+        print("Evaluation Results: mIOU: %.4f, mAP: %.4f" % (iou[1], mAP[1]))
 
 
 def process_batch(opt, models, inputs):
@@ -196,35 +189,20 @@ def process_batch(opt, models, inputs):
     return outputs
 
 
-def save_topview(idx, tv, name_dest_im):
-    tv_np = tv.squeeze().cpu().numpy()
-    true_top_view = np.zeros((tv_np.shape[1], tv_np.shape[2]))
-    true_top_view[tv_np[1] > tv_np[0]] = 1.
+def save_topview(tv, name_dest_im, type):
     dir_name = os.path.dirname(name_dest_im)
     if not os.path.exists(dir_name):
         os.makedirs(dir_name)
+    tv_np = tv.squeeze().cpu().numpy()
+    if type == "both":
+        true_top_view = np.argmax(tv_np, axis=0)
+    else:
+        true_top_view = np.zeros((tv_np.shape[1], tv_np.shape[2]))
+        true_top_view[tv_np[1] > tv_np[0]] = 1.
+    
     lut = gen_lut()
-    rgb = labels2rgb(true_top_view.astype(np.uint8), lut)
-    cv2.imwrite(name_dest_im, rgb)
-    # lut = gen_lut()
-    # rgb = labels2rgb(tv_np.astype(np.uint8), lut)
-    # nlabel= 2
-    # cv2.imwrite(name_dest_im, rgb)
-def save_topview_both(idx, tv, name_dest_im):
-    dir_name = os.path.dirname(name_dest_im)
-    if not os.path.exists(dir_name):
-        os.makedirs(dir_name)
-    tv_np = tv.squeeze().cpu().numpy()
-    tv_np = np.argmax(tv_np, axis=0)
-    # lut = gen_lut()
-    # rgb = labels2rgb(tv_np.astype(np.uint8), lut)
-    # # nlabel= 3
-    # # rgb_image = color.label2rgb(tv_np.astype(np.uint8), colors=np.random.random((nlabel, 3)))
-    # dir_name = os.path.dirname(name_dest_im)
-    # cv2.imwrite(name_dest_im, rgb)
-
-    tv_np = ndarray_to_pil(tv_np.astype(np.bool_)).convert("1")
-    tv_np.save(name_dest_im)
+    rgb = labels2rgb(true_top_view.astype(np.uint8), lut, type)
+    cv2.imwrite(name_dest_im, rgb)    
     
 if __name__ == "__main__":
     evaluate()

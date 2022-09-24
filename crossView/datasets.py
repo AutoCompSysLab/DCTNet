@@ -6,7 +6,6 @@ import random
 
 import PIL.Image as pil
 import matplotlib.pyplot as PLT
-import cv2
 
 import numpy as np
 
@@ -84,8 +83,11 @@ class MonoDataset(data.Dataset):
         inputs["color"] = color_aug(self.resize(inputs["color"]))
         for key in inputs.keys():
             if key != "color" and "discr" not in key and key != "filename":
-                inputs[key] = process_topview(
-                    inputs[key], self.opt.occ_map_size)
+                if key == "both" or key == "both_gt":
+                    pass
+                else:
+                    inputs[key] = process_topview(
+                        inputs[key], self.opt.occ_map_size)
             elif key != "filename":
                 inputs[key] = self.to_tensor(inputs[key])
 
@@ -98,7 +100,7 @@ class MonoDataset(data.Dataset):
             color = color.transpose(pil.FLIP_LEFT_RIGHT)
 
         return color
-
+    
     def get_static(self, path, do_flip):
         tv = self.loader(path)
 
@@ -114,6 +116,26 @@ class MonoDataset(data.Dataset):
             tv = tv.transpose(pil.FLIP_LEFT_RIGHT)
 
         return tv.convert('L')
+
+    def get_both(self, dyn, stat):
+        dyn = np.asarray(dyn.convert("1"), dtype='uint8')
+        stat = np.asarray(stat.convert("1"), dtype='uint8')
+        stat = np.logical_and(stat,np.logical_not(dyn)) #stat = stat-dyn 
+        dyn = np.expand_dims(dyn, axis=1)
+        stat = np.expand_dims(stat, axis=1)
+        bg = np.logical_not(np.logical_or(dyn,stat)).astype(np.uint8)
+        both = np.asarray(np.argmax(np.concatenate((dyn,stat,bg), axis=1), axis=1))
+        return  both
+
+    def get_both_gt(self, dyn, stat):
+        dyn = np.asarray(dyn.convert("1"), dtype='uint8')
+        stat = np.asarray(stat.convert("1"), dtype='uint8')
+        stat = np.logical_and(stat,np.logical_not(dyn)) #stat = stat-dyn 
+        dyn = np.expand_dims(dyn, axis=1)
+        stat = np.expand_dims(stat, axis=1)
+        bg = np.logical_not(np.logical_or(dyn,stat)).astype(np.uint8)
+        both = np.asarray(np.argmax(np.concatenate((dyn,stat,bg), axis=1), axis=1))
+        return both 
 
     def get_osm(self, path, do_flip):
         osm = self.loader(path)
@@ -347,10 +369,17 @@ class Argoverse(MonoDataset):
         inputs["color"] = self.get_color(self.get_image_path(folder, frame_index), do_flip)
 
         if self.is_train:
-            inputs["dynamic"] = self.get_dynamic(
-                self.get_dynamic_path(folder, frame_index), do_flip)
-            inputs["static"] = self.get_static(
-                self.get_static_path(folder, frame_index), do_flip)
+            if self.opt.type == "both":
+                dyn = self.get_dynamic(
+                    self.get_dynamic_path(folder, frame_index), do_flip)
+                stat = self.get_static(
+                    self.get_static_path(folder, frame_index), do_flip)
+                inputs["both"] = self.get_both(dyn, stat)
+            else:
+                inputs["dynamic"] = self.get_dynamic(
+                    self.get_dynamic_path(folder, frame_index), do_flip)
+                inputs["static"] = self.get_static(
+                    self.get_static_path(folder, frame_index), do_flip)
             if self.opt.type == "dynamic":
                 inputs["discr"] = process_discr(
                     inputs["dynamic"], self.opt.occ_map_size)
@@ -361,6 +390,10 @@ class Argoverse(MonoDataset):
             elif self.opt.type == "static":
                 inputs["static_gt"] = self.get_static_gt(
                     self.get_static_gt_path(folder, frame_index), do_flip)
+            elif self.opt.type == "both":
+                dyn_gt = self.get_dynamic_gt(self.get_dynamic_gt_path(folder, frame_index), do_flip)
+                stat_gt = self.get_static_gt(self.get_static_gt_path(folder, frame_index), do_flip)
+                inputs["both_gt"] = self.get_both_gt(dyn_gt, stat_gt)
 
         if do_color_aug:
             color_aug = transforms.ColorJitter.get_params(

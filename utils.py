@@ -34,6 +34,23 @@ def mean_precision(eval_segm, gt_segm):
     # print(mAP)
     return mAP
 
+def both_mean_precision(eval_segm, gt_segm):
+    check_size(eval_segm, gt_segm)
+    cl, n_cl = both_extract_classes(gt_segm)
+    eval_mask, gt_mask = extract_both_masks(eval_segm, gt_segm, cl, n_cl)
+    mAP = [0] * n_cl
+    for i, c in enumerate(cl):
+        curr_eval_mask = eval_mask[i, :, :]
+        curr_gt_mask = gt_mask[i, :, :]
+        n_ii = np.sum(np.logical_and(curr_eval_mask, curr_gt_mask))
+        n_ij = np.sum(curr_eval_mask)
+        val = n_ii / float(n_ij)
+        if math.isnan(val):
+            mAP[i] = 0.
+        else:
+            mAP[i] = val
+    # print(mAP)
+    return mAP
 
 def mean_IU(eval_segm, gt_segm):
     '''
@@ -70,6 +87,40 @@ def mean_IU(eval_segm, gt_segm):
     # print('IU', IU)
     return IU
 
+def both_mean_IU(eval_segm, gt_segm):
+    '''
+    (1/n_cl) * sum_i(n_ii / (t_i + sum_j(n_ji) - n_ii))
+    '''
+
+    check_size(eval_segm, gt_segm)
+
+    cl, n_cl = both_union_classes(eval_segm, gt_segm)
+    _, n_cl_gt = both_extract_classes(gt_segm)
+    eval_mask, gt_mask = extract_both_masks(eval_segm, gt_segm, cl, n_cl)
+
+    IU = list([0]) * n_cl
+
+    for i, c in enumerate(cl):
+        curr_eval_mask = eval_mask[i, :, :]
+        curr_gt_mask = gt_mask[i, :, :]
+
+        if (np.sum(curr_eval_mask) == 0) or (np.sum(curr_gt_mask) == 0):
+            continue
+
+        # PLT.imshow(curr_eval_mask, cmap=PLT.cm.jet)
+        # PLT.show()
+        n_ii = np.sum(np.logical_and(curr_eval_mask, curr_gt_mask))
+        t_i = np.sum(curr_gt_mask)
+        n_ij = np.sum(curr_eval_mask)
+        # print(n_ii, t_i, n_ij)
+        # print('n_ii', n_ii)
+        # print('t_i', t_i)
+        # print('n_ij', n_ij)
+        # print(n_ii, t_i, n_ij)
+        IU[i] = n_ii / (t_i + n_ij - n_ii)
+
+    # print('IU', IU)
+    return IU
 
 '''
 Auxiliary functions used during evaluation.
@@ -93,6 +144,12 @@ def extract_classes(segm):
 
     return cl, n_cl
 
+def both_extract_classes(segm):
+    cl = np.array([0,1,2])
+    n_cl = 3
+
+    return cl, n_cl
+
 
 def union_classes(eval_segm, gt_segm):
     eval_cl, _ = extract_classes(eval_segm)
@@ -102,6 +159,16 @@ def union_classes(eval_segm, gt_segm):
     n_cl = len(cl)
     # n_cl = 9
     return cl, n_cl
+
+def both_union_classes(eval_segm, gt_segm):
+    eval_cl, _ = both_extract_classes(eval_segm)
+    gt_cl, _ = both_extract_classes(gt_segm)
+
+    cl = np.union1d(eval_cl, gt_cl)
+    n_cl = len(cl)
+    # n_cl = 9
+    return cl, n_cl
+
 
 
 def extract_masks(segm, cl, n_cl):
